@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Whitney Decomposition Duel — Auto‑Shuffle Forbidden</title>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background: #0f172a; color: #e2e8f0; }
+    .wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 28px; margin: 0 0 12px; letter-spacing: 0.3px; }
+    .sub { opacity: 0.85; margin-bottom: 12px; }
+    .row { display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start; }
+    .panel { background: #111827; border: 1px solid #1f2937; border-radius: 14px; padding: 12px; box-shadow: 0 10px 20px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.02); }
+    canvas { display: block; width: 100%; height: auto; background: linear-gradient(180deg, #0b132b 0%, #111827 60%, #0b132b 100%); border-radius: 12px; cursor: crosshair; }
+    .btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+    button { appearance: none; border: 1px solid #334155; background: #0ea5e9; color: white; padding: 8px 12px; border-radius: 10px; font-weight: 600; cursor: pointer; box-shadow: 0 6px 14px rgba(14,165,233,.25); }
+    button.secondary { background: #1f2937; color: #cbd5e1; border-color: #334155; box-shadow: none; }
+    button.ghost { background: transparent; color: #93c5fd; border-color: #334155; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .3px; }
+    .r { background: #ef4444; color: white; }
+    .b { background: #3b82f6; color: white; }
+    .meta { font-size: 14px; line-height: 1.5; }
+    .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .key { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    .swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #334155; }
+    .swatch.r { background: #ef4444; }
+    .swatch.b { background: #3b82f6; }
+    .swatch.f { background: #f59e0b; }
+    .swatch.s { background: #10b981; }
+    .explain { font-size: 13.5px; line-height: 1.55; opacity: .95; }
+    .footer { margin-top: 16px; font-size: 12.5px; opacity: .85; }
+    .muted { opacity: .75; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Whitney Decomposition Duel</h1>
+    <div class="sub">Auto‑shuffle mode: after <em>every move</em> the forbidden set is regenerated — no corner guarantees, denser and more irregular components, widely distributed.</div>
+
+    <div class="row">
+      <div class="panel">
+        <canvas id="board" width="1200" height="600"></canvas>
+      </div>
+
+      <div class="panel">
+        <div class="btns">
+          <button id="newForbidden">Shuffle Forbidden</button>
+          <button id="resetGame" class="secondary">Reset</button>
+          <button id="hintAngle" class="ghost">Find Valid Angle</button>
+          <button id="modeBtn" class="ghost" title="Cycle shape style">Style: Massive</button>
+          <button id="clustersBtn" class="ghost" title="Number of forbidden components">Clusters: 14</button>
+          <button id="autoBtn" class="ghost" title="Toggle auto‑shuffle after each move">Auto Forbidden: On</button>
+        </div>
+        <div id="status" class="meta"></div>
+        <div class="legend">
+          <div class="key"><span class="swatch r"></span> Red path</div>
+          <div class="key"><span class="swatch b"></span> Blue path</div>
+          <div class="key"><span class="swatch f"></span> Forbidden area</div>
+          <div class="key"><span class="swatch s"></span> Start/Goal bands</div>
+        </div>
+        <hr style="border: none; border-top: 1px solid #1f2937; margin: 12px 0;" />
+        <div class="explain">
+          <strong>Rules.</strong>
+          <ol>
+            <li>Choose <span class="badge r">RED</span> and <span class="badge b">BLUE</span> starts on the thin green band at the middle-left.</li>
+            <li>From a current point <span class="mono">P</span>, your move must land somewhere on the circle centered at <span class="mono">P</span> whose radius equals the distance from <span class="mono">P</span> to the forbidden region.</li>
+            <li>The segment between your old and new points may <em>not</em> intersect the forbidden region.</li>
+            <li>First to touch the thick right goal band wins.</li>
+            <li><em>Auto‑shuffle:</em> after each valid move, the forbidden set is replaced with a new dense, irregular arrangement (default On).</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel footer">
+      <div><strong>At the bottom: What is a “Whitney decomposition” (in brief)?</strong></div>
+      <div>
+        In analysis on domains with holes or rough boundaries, we often break the domain into a family of rectangles/squares whose sizes are comparable to their distances to the boundary; this is called a <em>Whitney decomposition</em>. It lets us control local behavior (e.g., estimates for functions or kernels) in a way that smoothly adapts to how close we are to the boundary. The spirit of this game mirrors that idea: step sizes are constrained by the distance to the forbidden set (a stand-in for a boundary), so moves naturally become smaller when you are near it and larger when you are far away.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ================= geometry helpers =================
+    function dot(a,b){return a.x*b.x + a.y*b.y}
+    function sub(a,b){return {x:a.x-b.x, y:a.y-b.y}}
+    function add(a,b){return {x:a.x+b.x, y:a.y+b.y}}
+    function mul(a,s){return {x:a.x*s, y:a.y*s}}
+    function len(v){return Math.hypot(v.x, v.y)}
+
+    function pointSegDist(p, a, b) {
+      const ab = sub(b,a);
+      const ap = sub(p,a);
+      const t = Math.max(0, Math.min(1, dot(ap,ab) / Math.max(1e-9, dot(ab,ab))));
+      const proj = add(a, mul(ab, t));
+      return len(sub(p, proj));
+    }
+
+    function segIntersectsSeg(a,b,c,d){
+      function orient(p,q,r){return Math.sign((q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x));}
+      function onSeg(p,q,r){return Math.min(p.x,r.x)-1e-9 <= q.x && q.x <= Math.max(p.x,r.x)+1e-9 && Math.min(p.y,r.y)-1e-9 <= q.y && q.y <= Math.max(p.y,r.y)+1e-9}
+      const o1 = orient(a,b,c), o2 = orient(a,b,d), o3 = orient(c,d,a), o4 = orient(c,d,b);
+      if(o1===0 && onSeg(a,c,b)) return true;
+      if(o2===0 && onSeg(a,d,b)) return true;
+      if(o3===0 && onSeg(c,a,d)) return true;
+      if(o4===0 && onSeg(c,b,d)) return true;
+      return (o1>0 && o2<0 || o1<0 && o2>0) && (o3>0 && o4<0 || o3<0 && o4>0);
+    }
+
+    function segIntersectsPoly(a,b, poly){
+      for(let i=0;i<poly.length;i++){
+        const c = poly[i], d = poly[(i+1)%poly.length];
+        if(segIntersectsSeg(a,b,c,d)) return true;
+      }
+      return false;
+    }
+
+    function segIntersectsForbidden(a,b, set){
+      for(const poly of set){ if(segIntersectsPoly(a,b,poly)) return true; }
+      return false;
+    }
+
+    function pointPolyDist(p, poly){
+      let d = Infinity;
+      for(let i=0;i<poly.length;i++){
+        const a = poly[i], b = poly[(i+1)%poly.length];
+        d = Math.min(d, pointSegDist(p,a,b));
+      }
+      return d;
+    }
+
+    function minDistForbidden(p, set){
+      let d = Infinity; for(const poly of set){ d = Math.min(d, pointPolyDist(p, poly)); } return d;
+    }
+
+    function pointInPoly(p, poly){
+      let inside = false;
+      for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+        const xi=poly[i].x, yi=poly[i].y, xj=poly[j].x, yj=poly[j].y;
+        const intersect = ((yi>p.y)!=(yj>p.y)) && (p.x < (xj-xi)*(p.y-yi)/(yj-yi+1e-9)+xi);
+        if(intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function insideForbidden(p, set){
+      for(const poly of set){ if(pointInPoly(p, poly)) return true; }
+      return false;
+    }
+
+    // ================= game setup =================
+    const W = 1200, H = 600;
+    const startBand = 36; // left start strip width
+    const goalBand = 36;  // right goal strip
+
+    const START_FRAC = 0.25; // Start band restricted to middle quarter vertically
+    function startBandRect(){
+      const h = H * START_FRAC;
+      const y = (H - h) / 2;
+      return { x: 0, y, w: startBand, h };
+    }
+
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+
+    const state = {
+      phase: 'pick-red',
+      turn: 'red',
+      red: { path: [], radius: 0 },
+      blue: { path: [], radius: 0 },
+      forbidden: [], // array of polygons
+      winner: null,
+      autoForbidden: true,
+    };
+
+    let forbiddenMode = 'massive'; // 'simple' | 'complex' | 'massive'
+    let forbiddenClusters = 14;     // target components (no corner guarantee)
+
+    function rand(min,max){return Math.random()*(max-min)+min}
+
+    // --------- helpers for shapes ---------
+    function clampPoint(p, marginX, marginY){
+      return { x: Math.max(startBand+marginX, Math.min(W-goalBand-marginX, p.x)), y: Math.max(marginY, Math.min(H-marginY, p.y)) };
+    }
+
+    function smoothPoly(pts, marginX, marginY){
+      const out = []; const a = 0.35; const L = pts.length;
+      for(let i=0;i<L;i++){
+        const A = pts[(i-1+L)%L], B = pts[i], C = pts[(i+1)%L];
+        out.push(clampPoint({ x: B.x*(1-a) + (A.x+C.x)*0.5*a, y: B.y*(1-a) + (A.y+C.y)*0.5*a }, marginX, marginY));
+      }
+      return out;
+    }
+
+    function makeComplexShape(cx, cy, marginX, marginY, mode){
+      const n = mode==='complex' ? 48 : 84;
+      const baseRx = mode==='complex' ? W*0.16 : W*0.24;
+      const baseRy = mode==='complex' ? H*0.18 : H*0.28;
+      const k1 = 3 + Math.floor(rand(0,3));
+      const k2 = 5 + Math.floor(rand(0,3));
+      const phi1 = rand(0, Math.PI*2), phi2 = rand(0, Math.PI*2);
+      const pts = [];
+      for(let i=0;i<n;i++){
+        const th = (i/n)*Math.PI*2;
+        const wobble = 1 + 0.24*Math.cos(k1*th+phi1) + 0.18*Math.cos(k2*th+phi2) + rand(-0.06,0.07);
+        const x = cx + Math.cos(th) * baseRx * wobble;
+        const y = cy + Math.sin(th) * baseRy * wobble;
+        pts.push(clampPoint({x,y}, marginX, marginY));
+      }
+      return smoothPoly(pts, marginX, marginY);
+    }
+
+    function makeNoisyPoly(cx, cy, marginX, marginY){
+      // irregular small-ish blob, used to increase density/variance
+      const n = 10 + Math.floor(Math.random()*10);
+      const r = rand(40, 110);
+      const pts = [];
+      for(let i=0;i<n;i++){
+        const th = (i/n)*Math.PI*2 + rand(-0.12,0.12);
+        const ri = r * (0.6 + Math.random()*0.8);
+        pts.push(clampPoint({x: cx + Math.cos(th)*ri, y: cy + Math.sin(th)*ri}, marginX, marginY));
+      }
+      return smoothPoly(pts, marginX, marginY);
+    }
+
+    // ---------- generator (no corner bias; wide distribution) ----------
+    function genForbidden(avoidPts=[])// avoidPts: [{x,y}] (players' current points)
+    {
+      const marginX = 20, marginY = 40;
+      const bandXmin = startBand + 60;
+      const bandXmax = W - goalBand - 60;
+
+      const polys = [];
+      const centers = [];
+
+      const target = Math.max(forbiddenClusters, 10); // ensure >=10
+      const tries = Math.max(50, target*20);
+      const centerMinDist = 120; // Poisson‑like spread
+
+      let attempts = 0;
+      while(polys.length < target && attempts++ < tries){
+        const cx = rand(bandXmin+70, bandXmax-70);
+        const cy = rand(marginY+70, H - marginY - 70);
+        // reject if too close to other centers
+        let okCenter = true;
+        for(const c of centers){ if(Math.hypot(cx-c.x, cy-c.y) < centerMinDist) { okCenter=false; break; } }
+        if(!okCenter) continue;
+        for(const a of avoidPts){ if(Math.hypot(cx-a.x, cy-a.y) < 140) { okCenter=false; break; } }
+        if(!okCenter) continue;
+
+        const mode = (Math.random() < 0.5 ? 'complex' : 'massive');
+        const useNoisy = Math.random() < 0.35; // sprinkle small noisy blobs
+        const poly = useNoisy ? makeNoisyPoly(cx, cy, marginX, marginY) : makeComplexShape(cx, cy, marginX, marginY, mode);
+
+        // keep away from bands
+        let minX=Infinity, maxX=-Infinity;
+        for(const p of poly){ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); }
+        let feasible = !(minX <= startBand+marginX+5 || maxX >= W-goalBand-marginX-5);
+
+        // keep shapes from overlapping too tightly
+        if(feasible){
+          for(const q of polys){
+            for(const v of poly){ if(minDistForbidden(v,[q]) < 18) { feasible=false; break; } }
+            if(!feasible) break;
+          }
+        }
+
+        if(feasible){ polys.push(poly); centers.push({x:cx,y:cy}); }
+      }
+
+      // fallback
+      if(polys.length===0){
+        polys.push(makeComplexShape((bandXmin+bandXmax)/2, H/2, marginX, marginY, 'complex'));
+      }
+      return polys;
+    }
+
+    function resetForbidden(){
+      const avoid = [];
+      if(state.red.path.length) avoid.push(state.red.path.at(-1));
+      if(state.blue.path.length) avoid.push(state.blue.path.at(-1));
+      state.forbidden = genForbidden(avoid);
+      draw();
+    }
+
+    function hardReset(){
+      state.winner = null;
+      state.phase = 'pick-red';
+      state.turn = 'red';
+      state.red = { path: [], radius: 0 };
+      state.blue = { path: [], radius: 0 };
+      resetForbidden();
+      setStatus("Pick <span class='badge r'>RED</span> start in the middle-left green band.");
+    }
+
+    function setStatus(html){ document.getElementById('status').innerHTML = html; }
+    function currentPlayer(){ return state.turn === 'red' ? state.red : state.blue; }
+
+    function computeRadius(p){
+      const inside = insideForbidden(p, state.forbidden);
+      const d = minDistForbidden(p, state.forbidden);
+      return inside ? Math.max(6, d) : d;
+    }
+
+    // ================= drawing =================
+    function draw(){
+      ctx.clearRect(0,0,W,H);
+      ctx.lineWidth = 2; ctx.strokeStyle = '#334155'; ctx.strokeRect(1,1,W-2,H-2);
+
+      // start band (middle 1/4 vertically)
+      const sb = startBandRect();
+      ctx.fillStyle = '#10b98155'; ctx.fillRect(sb.x, sb.y, sb.w, sb.h);
+      ctx.lineWidth = 4; ctx.strokeStyle = '#10b981';
+      ctx.strokeRect(sb.x + 0.5, sb.y + 0.5, sb.w - 1, sb.h - 1);
+
+      // goal band (full height on right)
+      ctx.fillStyle = '#10b98155'; ctx.fillRect(W-goalBand, 0, goalBand, H);
+      ctx.lineWidth = 4; ctx.strokeStyle = '#10b981';
+      ctx.strokeRect(W-goalBand+0.5, 0.5, goalBand-1, H-1);
+
+      const set = state.forbidden;
+      if(set.length){
+        for(const F of set){
+          ctx.beginPath(); ctx.moveTo(F[0].x, F[0].y); for(let i=1;i<F.length;i++) ctx.lineTo(F[i].x, F[i].y); ctx.closePath();
+          ctx.fillStyle = '#f59e0b77'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#fbbf24'; ctx.stroke();
+        }
+      }
+
+      function drawPath(player, color){
+        const pts = player.path; if(!pts.length) return;
+        ctx.fillStyle = color; for(const p of pts){ ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI*2); ctx.fill(); }
+        ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.beginPath();
+        for(let i=1;i<pts.length;i++){ ctx.moveTo(pts[i-1].x, pts[i-1].y); ctx.lineTo(pts[i].x, pts[i].y); }
+        ctx.stroke();
+      }
+      drawPath(state.red, '#ef4444'); drawPath(state.blue, '#3b82f6');
+
+      if(state.phase==='play' && !state.winner){
+        const P = currentPlayer().path.at(-1);
+        if(P){ const r = computeRadius(P); ctx.beginPath(); ctx.arc(P.x, P.y, r, 0, Math.PI*2); ctx.setLineDash([6,6]); ctx.lineWidth = 2; ctx.strokeStyle = state.turn==='red' ? '#ef4444' : '#3b82f6'; ctx.stroke(); ctx.setLineDash([]); }
+      }
+
+      if(state.winner){
+        ctx.fillStyle = 'rgba(2,6,23,.75)'; ctx.fillRect(0, H/2-40, W, 80);
+        ctx.fillStyle = '#e2e8f0'; ctx.font = '700 28px system-ui, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(state.winner.toUpperCase() + ' WINS!', W/2, H/2+10); ctx.textAlign = 'start';
+      }
+    }
+
+    function insideStartBand(p){
+      const sb = startBandRect();
+      return p.x >= sb.x && p.x <= sb.x + sb.w && p.y >= sb.y && p.y <= sb.y + sb.h;
+    }
+    function reachedGoal(p){ return p.x >= W - goalBand; }
+
+    // ================= interaction =================
+    function tryMoveToward(click){
+      const player = currentPlayer(); const P = player.path.at(-1); if(!P) return;
+      const r = computeRadius(P); const v = sub(click, P); let L = len(v);
+      if(L < 1e-6){ setStatus("Pick any direction along the circle."); return; }
+      const dir = mul(v, 1/L); const Q = add(P, mul(dir, r));
+      if(segIntersectsForbidden(P, Q, state.forbidden)){
+        setStatus("That ray crosses the forbidden region. Try another direction or use <em>Find Valid Angle</em>.");
+        draw(); ctx.strokeStyle = '#94a3b8'; ctx.setLineDash([4,4]); ctx.beginPath(); ctx.moveTo(P.x,P.y); ctx.lineTo(Q.x,Q.y); ctx.stroke(); ctx.setLineDash([]); return;
+      }
+      player.path.push(Q);
+      if(reachedGoal(Q)){ state.winner = state.turn; setStatus(`<span class='badge ${state.turn==='red'?'r':'b'}'>${state.turn.toUpperCase()}</span> reaches the goal band!`); draw(); return; }
+
+      // Auto‑shuffle forbidden AFTER each valid move, before handing the turn over
+      if(state.autoForbidden){ resetForbidden(); }
+
+      state.turn = state.turn === 'red' ? 'blue' : 'red';
+      setStatus(`Your turn: <span class='badge ${state.turn==='red'?'r':'b'}'>${state.turn.toUpperCase()}</span>. Pick a direction from the dashed circle.`);
+      draw();
+    }
+
+    function handleClick(evt){
+      const rect = canvas.getBoundingClientRect();
+      const p = { x: (evt.clientX-rect.left) * (canvas.width/rect.width), y: (evt.clientY-rect.top) * (canvas.height/rect.height) };
+      if(state.winner){ return; }
+      if(state.phase === 'pick-red'){
+        if(!insideStartBand(p)) { setStatus('Pick inside the middle-left start band for RED.'); return; }
+        if(insideForbidden(p, state.forbidden)) { setStatus('Start point cannot be inside the forbidden region.'); return; }
+        state.red.path.push(p); state.phase = 'pick-blue'; setStatus("Pick <span class='badge b'>BLUE</span> start in the middle-left band."); draw(); return;
+      }
+      if(state.phase === 'pick-blue'){
+        if(!insideStartBand(p)) { setStatus('Pick inside the middle-left start band for BLUE.'); return; }
+        if(insideForbidden(p, state.forbidden)) { setStatus('Start point cannot be inside the forbidden region.'); return; }
+        state.blue.path.push(p); state.phase = 'play'; state.turn = 'red'; setStatus("Your turn: <span class='badge r'>RED</span>. Pick a direction from the dashed circle."); draw(); return;
+      }
+      if(state.phase === 'play'){ tryMoveToward(p); }
+    }
+
+    function hintAngle(){
+      if(state.phase !== 'play' || state.winner) return;
+      const player = currentPlayer(); const P = player.path.at(-1); if(!P) return; const r = computeRadius(P);
+      const samples = 360; let best = null; let bestScore = -Infinity;
+      for(let i=0;i<samples;i++){
+        const ang = (i/samples)*Math.PI*2; const dir = {x: Math.cos(ang), y: Math.sin(ang)}; const Q = add(P, mul(dir, r));
+        if(!segIntersectsForbidden(P,Q,state.forbidden)){
+          const score = dir.x - Math.abs(dir.y)*0.12; if(score > bestScore){ bestScore = score; best = Q; }
+        }
+      }
+      if(best){ draw(); ctx.strokeStyle = '#22d3ee'; ctx.setLineDash([3,6]); ctx.beginPath(); ctx.moveTo(P.x,P.y); ctx.lineTo(best.x,best.y); ctx.stroke(); ctx.setLineDash([]); setStatus('Suggested direction highlighted. Click near that direction to move.'); }
+      else { setStatus('No legal direction from here—consider resetting or choosing a different start next game.'); }
+    }
+
+    // ================= controls =================
+    canvas.addEventListener('click', handleClick);
+    document.getElementById('newForbidden').addEventListener('click', resetForbidden);
+    document.getElementById('resetGame').addEventListener('click', hardReset);
+    document.getElementById('hintAngle').addEventListener('click', hintAngle);
+
+    function cycleMode(){
+      forbiddenMode = forbiddenMode === 'simple' ? 'complex' : forbiddenMode === 'complex' ? 'massive' : 'simple';
+      document.getElementById('modeBtn').textContent = `Style: ${forbiddenMode.charAt(0).toUpperCase()+forbiddenMode.slice(1)}`; resetForbidden();
+    }
+    document.getElementById('modeBtn').addEventListener('click', cycleMode);
+
+    function cycleClusters(){
+      // cycle 8..18 for denser fields
+      const next = forbiddenClusters + 1;
+      forbiddenClusters = (next > 18 ? 8 : next);
+      document.getElementById('clustersBtn').textContent = `Clusters: ${forbiddenClusters}`; resetForbidden();
+    }
+    document.getElementById('clustersBtn').addEventListener('click', cycleClusters);
+
+    function toggleAuto(){
+      state.autoForbidden = !state.autoForbidden;
+      document.getElementById('autoBtn').textContent = `Auto Forbidden: ${state.autoForbidden? 'On' : 'Off'}`;
+    }
+    document.getElementById('autoBtn').addEventListener('click', toggleAuto);
+
+    // ================= init =================
+    hardReset();
+  </script>
+</body>
+</html>
